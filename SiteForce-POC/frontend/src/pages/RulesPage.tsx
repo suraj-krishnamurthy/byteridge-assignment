@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import api from '../api/client'
 
 const RUPEE = '\u20B9'
@@ -43,8 +43,10 @@ export default function RulesPage() {
       setRules(rulesRes.data)
       setGlobalDefault(defaultsRes.data)
 
-      // Get unique sites from payment data
-      const allSites = [...new Set(paymentsRes.data.items.map((p) => p.siteName))]
+      const allSites = [...new Set([
+        ...paymentsRes.data.items.map((p) => p.siteName),
+        ...rulesRes.data.map((r) => r.siteName),
+      ])].sort((a, b) => a.localeCompare(b))
       setAvailableSites(allSites)
     } catch {
       // ignore
@@ -57,9 +59,10 @@ export default function RulesPage() {
     fetchRules()
   }, [])
 
-  // Sites that don't already have a rule
-  const unconfiguredSites = availableSites.filter(
-    (site) => !rules.some((r) => r.siteName === site)
+  const normalizedSiteName = form.siteName.trim().toLowerCase()
+  const existingRuleForSite = useMemo(
+    () => rules.find((r) => r.siteName.trim().toLowerCase() === normalizedSiteName),
+    [rules, normalizedSiteName]
   )
 
   const handleEdit = (rule: SiteRuleConfig) => {
@@ -74,13 +77,9 @@ export default function RulesPage() {
   }
 
   const handleAdd = () => {
-    if (unconfiguredSites.length === 0) {
-      alert('All sites already have rules configured.')
-      return
-    }
     setEditingRule(null)
     setForm({
-      siteName: unconfiguredSites[0],
+      siteName: '',
       advanceDeductionAmount: globalDefault?.advanceDeductionAmount ?? 0,
       siteAllowancePercent: globalDefault?.siteAllowancePercent ?? 10,
       disputeThresholdAmount: globalDefault?.disputeThresholdAmount ?? 20358,
@@ -89,13 +88,21 @@ export default function RulesPage() {
   }
 
   const handleSave = async () => {
-    if (!form.siteName.trim()) {
+    const siteName = form.siteName.trim()
+
+    if (!siteName) {
       alert('Site name is required')
       return
     }
+
+    if (!editingRule && existingRuleForSite) {
+      alert(`A rule already exists for "${existingRuleForSite.siteName}". Use Edit instead.`)
+      return
+    }
+
     setSaving(true)
     try {
-      await api.post('/rules', form)
+      await api.post('/rules', { ...form, siteName })
       setShowForm(false)
       setEditingRule(null)
       fetchRules()
@@ -131,8 +138,7 @@ export default function RulesPage() {
         </div>
         <button
           onClick={handleAdd}
-          disabled={unconfiguredSites.length === 0}
-          className="px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-500 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-500 active:scale-[0.98] transition-all"
         >
           + Add Site Rule
         </button>
@@ -151,7 +157,6 @@ export default function RulesPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/50">
-            {/* Global Default Row */}
             {globalDefault && (
               <tr className="bg-indigo-950/30">
                 <td className="px-4 py-3.5 text-sm font-semibold text-indigo-300">
@@ -165,7 +170,6 @@ export default function RulesPage() {
                 <td className="px-4 py-3.5 text-xs text-center text-slate-600">-</td>
               </tr>
             )}
-            {/* Site-specific Rules */}
             {rules.map((r) => (
               <tr key={r.id} className="hover:bg-slate-800/30 transition-colors">
                 <td className="px-4 py-3.5 text-sm font-medium text-slate-300">{r.siteName}</td>
@@ -199,7 +203,6 @@ export default function RulesPage() {
         <p className="text-xs text-slate-500 mt-2 text-center">No site-specific overrides configured. All sites use the global default above.</p>
       )}
 
-      {/* Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-slate-900 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-slate-800">
@@ -217,16 +220,23 @@ export default function RulesPage() {
                     className="w-full border border-slate-700 rounded-lg px-3 py-2.5 text-sm bg-slate-800/50 text-slate-500 cursor-not-allowed"
                   />
                 ) : (
-                  <select
-                    value={form.siteName}
-                    onChange={(e) => setForm({ ...form, siteName: e.target.value })}
-                    className="w-full border border-slate-700 rounded-lg px-3 py-2.5 text-sm bg-slate-800 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
-                  >
-                    {unconfiguredSites.map((site) => (
-                      <option key={site} value={site}>{site}</option>
-                    ))}
-                  </select>
+                  <>
+                    <input
+                      type="text"
+                      list="site-name-suggestions"
+                      value={form.siteName}
+                      onChange={(e) => setForm({ ...form, siteName: e.target.value })}
+                      placeholder="Enter site name"
+                      className="w-full border border-slate-700 rounded-lg px-3 py-2.5 text-sm bg-slate-800 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+                    />
+                    <datalist id="site-name-suggestions">
+                      {availableSites.map((site) => (
+                        <option key={site} value={site} />
+                      ))}
+                    </datalist>
+                  </>
                 )}
+                <p className="text-[11px] text-slate-500 mt-1">You can type a new site name before any upload, or pick a known site suggestion.</p>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Advance Recovery ({RUPEE})</label>
