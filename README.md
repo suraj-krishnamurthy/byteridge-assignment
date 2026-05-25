@@ -19,6 +19,33 @@ A proof-of-concept demonstrating the core payment disbursement workflow:
 - [Node.js 18+](https://nodejs.org/)
 - SQL Server (SQL Express locally, or [Docker Desktop](https://www.docker.com/products/docker-desktop/))
 
+
+## Architecture Style
+
+**Modular Monolith** with **Microkernel (Plugin) Architecture** for rule-based execution.
+
+- **Modular Monolith**: The application is deployed as a single unit but internally organized into cohesive modules (Ingestion, Calculation, Disputes, Audit, Rules) with clear boundaries and separated concerns via service interfaces.
+- **Microkernel / Plugin Pattern**: The payment calculation engine uses a plugin-based rule execution model (`IRulePlugin`). Each rule (BasePay, AdvanceDeduction, SiteAllowance, DisputeThreshold) is an independent plugin registered with the `RuleEngine`. New rules can be added without modifying existing calculation logic — simply implement `IRulePlugin` and register it.
+
+This hybrid approach provides:
+- Fast development velocity of a monolith
+- Extensibility of a plugin system for business rules
+- Clear path to decomposition if needed in production
+
+## Architecture Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Modular Monolith + Microkernel** | Monolith for simplicity and fast iteration; Microkernel (plugin) pattern for the rule engine enabling extensible, swappable calculation rules without modifying core logic |
+| No authentication | POC uses hardcoded `X-User-Name` header; production inherits SiteForce JWT |
+| Single-tenant | No tenant isolation in POC |
+| Config-driven rules | Global defaults in appsettings; per-site overrides stored in DB |
+| ClosedXML (MIT) | Avoids EPPlus license complexity |
+| EF Core auto-migrate | Convenience for POC; production uses explicit migration deployment |
+| SQL DENY + Trigger | Defense-in-depth: audit immutability enforced at DB layer |
+| In-memory DB for tests | Fast, isolated test runs without external dependencies |
+
+
 ## Quick Start
 
 ### 1. Database Setup
@@ -170,28 +197,3 @@ SiteForce-POC/
     ├── package.json
     └── vite.config.ts
 ```
-
-## Architecture Style
-
-**Modular Monolith** with **Microkernel (Plugin) Architecture** for rule-based execution.
-
-- **Modular Monolith**: The application is deployed as a single unit but internally organized into cohesive modules (Ingestion, Calculation, Disputes, Audit, Rules) with clear boundaries and separated concerns via service interfaces.
-- **Microkernel / Plugin Pattern**: The payment calculation engine uses a plugin-based rule execution model (`IRulePlugin`). Each rule (BasePay, AdvanceDeduction, SiteAllowance, DisputeThreshold) is an independent plugin registered with the `RuleEngine`. New rules can be added without modifying existing calculation logic — simply implement `IRulePlugin` and register it.
-
-This hybrid approach provides:
-- Fast development velocity of a monolith
-- Extensibility of a plugin system for business rules
-- Clear path to decomposition if needed in production
-
-## Architecture Decisions
-
-| Decision | Rationale |
-|----------|-----------|
-| **Modular Monolith + Microkernel** | Monolith for simplicity and fast iteration; Microkernel (plugin) pattern for the rule engine enabling extensible, swappable calculation rules without modifying core logic |
-| No authentication | POC uses hardcoded `X-User-Name` header; production inherits SiteForce JWT |
-| Single-tenant | No tenant isolation in POC |
-| Config-driven rules | Global defaults in appsettings; per-site overrides stored in DB |
-| ClosedXML (MIT) | Avoids EPPlus license complexity |
-| EF Core auto-migrate | Convenience for POC; production uses explicit migration deployment |
-| SQL DENY + Trigger | Defense-in-depth: audit immutability enforced at DB layer |
-| In-memory DB for tests | Fast, isolated test runs without external dependencies |
